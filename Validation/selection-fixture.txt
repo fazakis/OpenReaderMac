@@ -1,0 +1,3 @@
+OpenReader selection test.
+The quick brown fox jumps over the lazy dog.
+This second sentence checks sentence navigation.

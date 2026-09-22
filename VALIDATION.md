@@ -1,0 +1,68 @@
+# Validation record
+
+Development checks were performed on Apple Silicon, macOS 26.0 (25A354), Xcode 26.2 (17C52), Swift 6.2.3. Deployment target: macOS 14.0. This record distinguishes tests from implemented features still requiring broader validation. Machine-specific raw reports are excluded from Git.
+
+## Source-highlighting fix (version 1.1)
+
+- Production selection/geometry code mapped **20 of 20 words** in a Chrome HTML fixture, including wrapped text.
+- It mapped **19 of 19 words** in a selected Preview PDF fixture across multiple lines.
+- It mapped **9 of 9 words** in a selected Chrome built-in PDF paragraph.
+- A native harness ran the real `ReaderModel`, `TextExtractor`, Kokoro backend, `AudioPlayback`, and `WordHighlighter` while the Chrome PDF fixture was foreground. **19 timed words and 19 source overlays** were observed through production state. A two-second pause retained the sample position and overlay; playback resumed and the overlay cleared on completion.
+- The user subsequently installed version 1.1, renewed permissions, and reported the source highlighting worked very well.
+- Four additional mapping tests cover PDF whitespace, repeated text, Unicode/formatting splits, and mismatched/missing text. These brought the suite to **14 passing tests** at that release.
+
+## Existing backend and audio validation
+
+Using the configured real Kokoro service, model `kokoro`, voice `af_alloy`:
+
+- SSH tunnel and live discovery passed (68 voices at verification).
+- Raw 24 kHz mono PCM streamed and played through AVAudioEngine. A warm request delivered its first 8,192-byte block in about 0.135 seconds; this is one observation, not a general latency guarantee.
+- Pause retained sample position; resume advanced it. Rates 0.5× and 3× were applied locally, with generation remaining 1.0.
+- Stop cleared pending audio, cancelled the network task, and rejected stale audio.
+- Caption alignment validated all nine words in a fixture, with all nine word ranges observed during playback.
+- Connection failure and rejection of a public plaintext HTTP URL were checked.
+- HTTP 401/503 behavior was tested using a separately identified, **failure-only** local fixture. No successful synthesis mock was used and no public login password was guessed.
+
+## Native UI and OCR
+
+The release reader, floating controls, Settings, menu commands, global shortcut delivery, sentence/reader-word highlighting, Stop, and explicit unsupported-Greek behavior were exercised. The original mixed Unicode wording was preserved.
+
+Production Vision recognized an English synthetic image fixture and queried available OCR languages at runtime. Region/window capture and multi-display extraction are implemented, but the original end-to-end OCR tests were blocked by stale ad-hoc app permissions. Those checks have not been retrospectively marked successful. Geometry tests cover Retina scaling and negative display origins; only one physical display was available.
+
+## Repository preparation and shortcut update (version 1.2)
+
+This version removes private deployment values from source, supports SSH aliases with an optional username, retains saved local connections, and allows Option-based shortcuts without Command.
+
+- **18 regression tests passed**, including fresh generic defaults, decoding the existing saved-connection schema unchanged, SSH alias/explicit-user arguments, and invalid forwarding inputs. The original segmentation, ordering, cancellation, timing, and source-mapping tests remain passing.
+- **11 native shortcut checks passed** using the production manager and real macOS Carbon registration. Control, Option, Control–Option, and Option–Shift registered without Command; duplicate and native registration conflicts were detected, disabled assignments were ignored, and serialization preserved modifiers. Plain/Shift-only typing keys were rejected. This checks registration and configuration; new simulated keystroke or foreground-app delivery tests were not performed in this pass.
+- Xcode Release build succeeded for **arm64 and x86_64**. The app reports version **1.2 (3)**; its ad-hoc signature verifies and the MIT license is bundled.
+- Source/documentation and the release app were scanned for the known private server address, account email, home-directory paths, and private-key markers. The Git index and source archive contain no builds, reports, local settings, keys, or signing files.
+- The existing installed version 1.1 and its local preferences were retained. Live speech/source overlays were validated previously as recorded above; those end-to-end checks were not repeated for this repository/defaults update. No SSH configuration or server configuration was changed.
+
+## First-run permission setup (version 1.3)
+
+- The Release app built successfully for **arm64 and x86_64**, version **1.3 (4)**. All **18 regression tests** passed again; the ad-hoc signature and privacy checks passed.
+- A second build from the same production source used a separate validation bundle identifier and local preference domain. The installed app and its permission grants were not replaced or reset.
+- With fresh preferences, the native setup window opened automatically and showed Accessibility and Screen Recording as **Not granted**, with individual Enable buttons. No access request appeared just from opening the guide.
+- Visually checked the complete light-appearance layout and inspected its accessible controls. The Refresh status button worked without requesting access.
+- **Set up later** dismissed the guide and exposed the reader. **Settings → Permissions → Open permission setup…** reopened it. **Continue** dismissed it again. After quitting and relaunching the validation app, the reader opened without showing setup again.
+- The Settings UI also confirmed generic fresh connection defaults: SSH off, empty host/user, local port 18880, and loopback API URL.
+- Enable buttons call the existing production permission request methods. OS permission grants and a denied-to-granted transition were not exercised in this isolated test; no additional permission was granted. Status refresh on app activation is implemented, with manual refresh and relaunch guidance available.
+- Speech synthesis and source highlighting were unchanged and were not repeated in this UI-focused pass.
+
+## Automatic Copy fallback (version 1.4)
+
+- The Release app built successfully for **arm64 and x86_64**, version **1.4 (5)**. Its ad-hoc signature and MIT resource checks passed. The existing **18 core regression tests** and **11 native shortcut checks** passed again.
+- **15 native clipboard checks passed** against separate named pasteboards: copied Unicode, multiple items/formats, empty clipboard, no-op Copy, a newer owner, same-owner data mutation, late response after cancellation, non-text output, focus loss, promised formats, the memory limit, pre-dispatch cancellation, uncertain command delivery, and serialization/restoration when a new reading replaces a cancelled one. The general clipboard is not used by these tests.
+- An opt-in native integration harness ran the real `ReaderModel`, `TextExtractor`, Copy menu lookup/action, and clipboard reader against a disposable source app. The source intentionally withheld its Accessibility selection while exposing a real enabled Copy command. After the user brought it to the foreground, automatic Read selection returned the exact fixture text, restored the prior general clipboard items/formats, and reported reader-only word highlighting. Disabling the preference prevented Copy and left the clipboard ownership count unchanged.
+- The integration fixture includes Greek specifically so the existing unsupported-language check stops before synthesis. No fixture text or previous clipboard data was sent to a backend. This test verifies extraction and fallback routing, not a new speech/playback run.
+- In the isolated native UI test, **Automatically use Copy when selected text is unavailable** was initially on. Turning it off updated the switch, and the off state persisted after quitting/relaunching. The test used a separate bundle/preference identity; installed-app preferences and permissions were not modified.
+- Secure-field ancestry, original app/window/focus/document, any exposed selection range, and enabled Copy are checked before dispatch. Actual ChatGPT desktop compatibility, customized/localized nonstandard Copy menus, OS clipboard privacy prompts on other macOS versions, and a real secure-field UI case remain unverified in this pass. There is no blanket claim of support for every app.
+- Clipboard ownership and payload checks deliberately reject ambiguous/newer changes. macOS does not offer an atomic cross-process compare-and-restore operation; truly simultaneous writers and Copy responses arriving beyond the bounded timeout are documented limitations. No persistent clipboard watcher is installed.
+
+## Remaining scope limits
+
+- A scanned/protected PDF or source app without usable accessible text positions cannot provide dynamic source word overlays; reader progress remains available.
+- Active-window/region OCR source overlays and automatic scrolling are not provided.
+- Physical multiple-display capture, Intel/macOS 14 runtime, a full VoiceOver audit, and prolonged multi-hour/max-size stress tests remain unverified.
+- Ad-hoc rebuilding can invalidate macOS permissions. Complete a release build before renewing permission for its final installed path.

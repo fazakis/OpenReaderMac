@@ -1,0 +1,32 @@
+# Local builds, archives and Xcode state
+/build/
+/dist/
+/.build/
+DerivedData/
+*.app/
+*.dSYM/
+*.zip
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# Machine-specific settings, SSH material and signing files
+/.private/
+/local/
+*.local.*
+*.private.*
+.env
+.env.*
+!.env.example
+.ssh/
+id_rsa*
+id_ed25519*
+*.pem
+*.key
+*.p12
+*.mobileprovision
+
+# Diagnostic output can contain local paths and connection error context.
+/Validation/*.log
+/Validation/*.json
+/Validation/Reports/
