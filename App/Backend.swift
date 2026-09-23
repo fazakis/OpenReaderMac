@@ -8,6 +8,7 @@ final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 struct SpeechBackend: Sendable {
     let connection: Connection
     let token: String
+    var model = "kokoro"
     private func request(_ path: String) throws -> URLRequest {
         guard let base = URL(string: connection.serverURL), let host = base.host,
               base.user == nil, base.password == nil, base.query == nil, base.fragment == nil,
@@ -44,6 +45,14 @@ struct SpeechBackend: Sendable {
         guard !voices.isEmpty else { throw AppError.message("The speech API returned no voices.") }
         return voices
     }
+    func capabilities() async throws -> SpeechCapabilities {
+        let s = session(); defer { s.invalidateAndCancel() }
+        let (data, response) = try await s.data(for: request("capabilities"))
+        if let http = response as? HTTPURLResponse, [404, 405].contains(http.statusCode) { return .kokoro }
+        try check(response)
+        guard data.count < 100_000 else { throw AppError.message("Invalid speech capabilities response.") }
+        return try JSONDecoder().decode(SpeechCapabilities.self, from: data)
+    }
     struct CaptionPacket: Decodable, Sendable {
         let audio: String
         let audio_format: String
@@ -54,7 +63,7 @@ struct SpeechBackend: Sendable {
         var req = try request("audio/speech")
         guard let base = URL(string: connection.serverURL), let endpoint = URL(string: "/dev/captioned_speech", relativeTo: base)?.absoluteURL else { throw AppError.message("Invalid caption endpoint.") }
         req.url = endpoint; req.httpMethod = "POST"; req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: Any] = ["model":"kokoro", "input":text, "voice":connection.voice, "speed":1.0, "response_format":"pcm", "stream":true, "return_timestamps":true, "return_download_link":false, "volume_multiplier":1.0, "normalization_options":["normalize":false]]
+        var body: [String: Any] = ["model":model, "input":text, "voice":connection.voice, "speed":1.0, "response_format":"pcm", "stream":true, "return_timestamps":true, "return_download_link":false, "volume_multiplier":1.0, "normalization_options":["normalize":false]]
         if connection.language != "auto" { body["lang_code"] = connection.language }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let s = session(); defer { s.invalidateAndCancel() }
@@ -84,7 +93,7 @@ struct SpeechBackend: Sendable {
     func stream(text: String, receive: @escaping @Sendable (Data) async throws -> Void) async throws {
         var req = try request("audio/speech"); req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: Any] = ["model": "kokoro", "input": text, "voice": connection.voice, "speed": 1.0, "response_format": "pcm", "stream": true, "return_download_link": false, "volume_multiplier": 1.0, "normalization_options": ["normalize": false]]
+        var body: [String: Any] = ["model": model, "input": text, "voice": connection.voice, "speed": 1.0, "response_format": "pcm", "stream": true, "return_download_link": false, "volume_multiplier": 1.0, "normalization_options": ["normalize": false]]
         if connection.language != "auto" { body["lang_code"] = connection.language }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let s = session(); defer { s.invalidateAndCancel() }
@@ -122,7 +131,7 @@ struct SpeechBackend: Sendable {
             if let (_, response) = try? await URLSession.shared.data(for: probe), (response as? HTTPURLResponse)?.statusCode == 200 { return }
             try await Task.sleep(for: .milliseconds(150))
         }
-        close(); throw AppError.message("SSH opened, but Kokoro did not respond on the forwarded port.")
+        close(); throw AppError.message("SSH opened, but the speech service did not respond on the forwarded port.")
     }
     func close() { if process?.isRunning == true { process?.terminate() }; process = nil; signature = "" }
 }

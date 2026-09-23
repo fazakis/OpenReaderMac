@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-xcodebuild -project OpenReaderMac.xcodeproj -scheme OpenReaderMac -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath build build
+xcodebuild -project OpenReaderMac.xcodeproj -scheme OpenReaderMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
 mkdir -p dist
 if [ -d 'dist/OpenReader Mac.app' ]; then
     mv 'dist/OpenReader Mac.app' "build/previous-app-$(date +%s).app"

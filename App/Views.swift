@@ -158,8 +158,8 @@ struct SettingsView: View {
         TabView {
             Form {
                 Section("Speech connection") {
-                    LabeledContent("Model", value: "kokoro")
-                    Text("Connect to your own Kokoro speech service. Keep server addresses and key paths in ~/.ssh/config and enter an alias below. Connection settings stay on this Mac.").font(.caption).foregroundStyle(.secondary)
+                    LabeledContent("Speech engines", value: model.speechCapabilities.supportsGreek ? "Kokoro + Supertonic 3" : "Kokoro")
+                    Text("Connect to your own speech service. Keep server addresses and key paths in ~/.ssh/config and enter an alias below. Connection settings stay on this Mac.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Manage SSH tunnel", isOn: $preferences.connection.useSSH)
                     TextField("SSH alias or host", text: $preferences.connection.sshHost).disabled(!preferences.connection.useSSH)
                     TextField("SSH user (optional)", text: $preferences.connection.sshUser).disabled(!preferences.connection.useSSH)
@@ -179,9 +179,14 @@ struct SettingsView: View {
             Form {
                 Section("Voice & playback") {
                     Picker("Voice", selection: $preferences.connection.voice) { ForEach(Array(Set(model.voices + [preferences.connection.voice])).sorted(), id: \.self) { Text($0).tag($0) } }
+                    Picker("Greek / mixed reading voice", selection: Binding(get: { preferences.connection.greekVoice ?? "st_f1" }, set: { preferences.connection.greekVoice = $0 })) {
+                        ForEach(Array(Set(model.speechCapabilities.greekVoices + [preferences.connection.greekVoice ?? "st_f1"])).sorted(), id: \.self) { Text($0).tag($0) }
+                    }.disabled(!model.speechCapabilities.supportsGreek)
+                    Text("Readings containing Greek use the Greek voice throughout, including English passages. English-only readings keep your regular voice. Both engines run on your configured server.").font(.caption).foregroundStyle(.secondary)
                     Button("Refresh available voices") { model.connect() }
                     Picker("Speech language", selection: $preferences.connection.language) {
-                        Text("From voice (verified default)").tag("auto")
+                        Text("Automatic / from voice").tag("auto")
+                        Text("Greek / mixed Greek + English").tag("el")
                         Text("American English").tag("a"); Text("British English").tag("b")
                         Text("Spanish").tag("e"); Text("French").tag("f"); Text("Hindi").tag("h"); Text("Italian").tag("i"); Text("Japanese").tag("j"); Text("Brazilian Portuguese").tag("p"); Text("Mandarin").tag("z")
                     }
@@ -196,7 +201,7 @@ struct SettingsView: View {
                 Section("OCR & languages") {
                     Picker("OCR language", selection: $preferences.ocrLanguage) { Text("English").tag("en"); Text("Greek").tag("el"); Text("English + Greek").tag("mixed") }
                     Text("Vision languages on this Mac: \(model.ocrLanguages.joined(separator: ", "))").font(.caption).textSelection(.enabled)
-                    Text("The supported Kokoro backend has no Greek voice or language pipeline. Greek text stays intact in the reader, but Greek and mixed Greek/English speech are disabled. No translation or alternate provider is used.").font(.caption).foregroundStyle(.orange)
+                    Text(model.speechCapabilities.supportsGreek ? "Greek and mixed Greek/English speech are enabled on your server. Supertonic voices use sentence highlighting; no word timings are invented. OCR support is separate." : "Greek speech requires a multilingual OpenReader server. Test the connection to check support. Text is never translated or sent to an unconfigured provider.").font(.caption).foregroundStyle(.secondary)
                 }
             }.formStyle(.grouped).tabItem { Label("Playback", systemImage: "speaker.wave.2") }
             ScrollView {

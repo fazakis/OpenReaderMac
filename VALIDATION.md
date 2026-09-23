@@ -1,5 +1,34 @@
 # Validation record
 
+## Version 1.5.0 — multilingual speech (23 September 2026)
+
+- Built on Apple Silicon with macOS 26.0 and Xcode 26.2. The Release app is
+  universal **arm64 + x86_64**, minimum macOS 14, version **1.5.0 (6)**. Both
+  architectures compile; runtime validation was on Apple Silicon, not Intel.
+- **24 Swift core tests**, including Greek capability negotiation, old preference
+  migration, Unicode preservation, voice selection, and legacy refusal, passed.
+- **15 native clipboard regression checks** passed. The extraction fixture now
+  explicitly disables autoplay rather than relying on Greek being unsupported.
+- **14 backend tests** passed: byte-preserving Kokoro proxy, language routing,
+  script-span preservation, 24 kHz resampling, invalid requests, and no invented
+  word timings.
+- The live native harness uses the production ReaderModel, SpeechBackend, and
+  AVAudioEngine with muted output and disposable preferences. English captioned,
+  Greek, mixed Greek/English, Greek raw playback, and Stop/late-audio rejection
+  passed against the real services. This does not constitute a human listening
+  assessment or a new OCR/source-overlay test.
+- Greek audio was checked using local multilingual speech recognition, which
+  recovered the Greek-only test sentence. Mixed readings use explicit Greek and
+  English spans with a single voice; automatic transcription of code switching
+  is imperfect and is not treated as proof of pronunciation quality.
+- Greek/Supertonic exposes no word timestamps and uses honest sentence/chunk
+  progress. English/Kokoro retains the existing caption timestamps.
+- The binary has a valid ad-hoc signature; it is **not Apple-notarized**. No
+  installed app was replaced during development. Server addresses, credentials,
+  model weights, and private deployment records are not included in the release.
+
+The sections below record earlier-version validation and are retained as history.
+
 Development checks were performed on Apple Silicon, macOS 26.0 (25A354), Xcode 26.2 (17C52), Swift 6.2.3. Deployment target: macOS 14.0. This record distinguishes tests from implemented features still requiring broader validation. Machine-specific raw reports are excluded from Git.
 
 ## Source-highlighting fix (version 1.1)

@@ -2,15 +2,17 @@ import SwiftUI
 import Security
 
 @MainActor final class Preferences: ObservableObject {
+    private let defaults: UserDefaults
     @Published var connection: Connection { didSet { save() } }
-    @Published var speed: Double { didSet { UserDefaults.standard.set(speed, forKey: "speed") } }
-    @Published var volume: Double { didSet { UserDefaults.standard.set(volume, forKey: "volume") } }
-    @Published var highlightWords: Bool { didSet { UserDefaults.standard.set(highlightWords, forKey: "highlightWords") } }
-    @Published var ocrLanguage: String { didSet { UserDefaults.standard.set(ocrLanguage, forKey: "ocrLanguage") } }
-    @Published var automaticCopyFallback: Bool { didSet { UserDefaults.standard.set(automaticCopyFallback, forKey: "automaticCopyFallback") } }
+    @Published var speed: Double { didSet { defaults.set(speed, forKey: "speed") } }
+    @Published var volume: Double { didSet { defaults.set(volume, forKey: "volume") } }
+    @Published var highlightWords: Bool { didSet { defaults.set(highlightWords, forKey: "highlightWords") } }
+    @Published var ocrLanguage: String { didSet { defaults.set(ocrLanguage, forKey: "ocrLanguage") } }
+    @Published var automaticCopyFallback: Bool { didSet { defaults.set(automaticCopyFallback, forKey: "automaticCopyFallback") } }
     @Published var shortcuts: [Shortcut] { didSet { save() } }
-    init() {
-        let d = UserDefaults.standard
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let d = defaults
         connection = Connection.load(from: d)
         automaticCopyFallback = d.object(forKey: "automaticCopyFallback") as? Bool ?? true
         speed = d.object(forKey: "speed") as? Double ?? 1.4
@@ -20,8 +22,8 @@ import Security
         shortcuts = d.data(forKey: "shortcuts").flatMap { try? JSONDecoder().decode([Shortcut].self, from: $0) } ?? Shortcut.defaults
     }
     private func save() {
-        if let data = try? JSONEncoder().encode(connection) { UserDefaults.standard.set(data, forKey: "connection") }
-        if let data = try? JSONEncoder().encode(shortcuts) { UserDefaults.standard.set(data, forKey: "shortcuts") }
+        if let data = try? JSONEncoder().encode(connection) { defaults.set(data, forKey: "connection") }
+        if let data = try? JSONEncoder().encode(shortcuts) { defaults.set(data, forKey: "shortcuts") }
     }
 }
 

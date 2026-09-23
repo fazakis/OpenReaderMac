@@ -3,7 +3,7 @@ import AppKit
 import ApplicationServices
 
 @MainActor final class ReaderModel: ObservableObject {
-    var preferences = Preferences()
+    var preferences: Preferences
     let audio = AudioPlayback()
     let shortcuts = ShortcutManager()
     let extractor = TextExtractor()
@@ -25,6 +25,8 @@ import ApplicationServices
     @Published var status = "Ready"
     @Published var error: String?
     @Published var voices = ["af_alloy"]
+    @Published var speechCapabilities = SpeechCapabilities.kokoro
+    private let automaticallyPlay: Bool
     @Published var isConnecting = false
     @Published var accessibilityGranted = AXIsProcessTrusted()
     @Published var screenGranted = CGPreflightScreenCaptureAccess()
@@ -37,16 +39,18 @@ import ApplicationServices
     private var requestID = UUID()
     private var lastExternal: SourceApp?
     private var cancellables: Set<AnyCancellable> = []
-    init(registerShortcuts: Bool = true) {
+    init(registerShortcuts: Bool = true, automaticallyPlay: Bool = true, preferences suppliedPreferences: Preferences? = nil) {
+        self.preferences = suppliedPreferences ?? Preferences()
+        self.automaticallyPlay = automaticallyPlay
         shortcuts.perform = { [weak self] in self?.perform($0) }
         if registerShortcuts {
-            shortcuts.register(preferences.shortcuts)
-            preferences.$shortcuts.dropFirst().sink { [weak self] in self?.shortcuts.register($0) }.store(in: &cancellables)
+            shortcuts.register(self.preferences.shortcuts)
+            self.preferences.$shortcuts.dropFirst().sink { [weak self] in self?.shortcuts.register($0) }.store(in: &cancellables)
         }
-        preferences.$speed.sink { [weak self] in self?.audio.setSpeed($0) }.store(in: &cancellables)
-        preferences.$volume.sink { [weak self] in self?.audio.setVolume($0) }.store(in: &cancellables)
-        preferences.$connection.removeDuplicates().dropFirst().sink { [weak self] _ in self?.stop(); self?.tunnel.close(); self?.status = "Connection or voice changed. Press Play to restart." }.store(in: &cancellables)
-        preferences.$automaticCopyFallback.removeDuplicates().dropFirst().sink { [weak self] _ in self?.stop() }.store(in: &cancellables)
+        self.preferences.$speed.sink { [weak self] in self?.audio.setSpeed($0) }.store(in: &cancellables)
+        self.preferences.$volume.sink { [weak self] in self?.audio.setVolume($0) }.store(in: &cancellables)
+        self.preferences.$connection.removeDuplicates().dropFirst().sink { [weak self] _ in self?.stop(); self?.tunnel.close(); self?.status = "Connection or voice changed. Press Play to restart." }.store(in: &cancellables)
+        self.preferences.$automaticCopyFallback.removeDuplicates().dropFirst().sink { [weak self] _ in self?.stop() }.store(in: &cancellables)
         audio.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         shortcuts.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         preferences.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
@@ -57,7 +61,7 @@ import ApplicationServices
         // Refresh geometry during scrolling, zooming and paused playback too.
         Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.updateSourceHighlight(replace: false) }.store(in: &cancellables)
-        preferences.$highlightWords.dropFirst().sink { [weak self] enabled in
+        self.preferences.$highlightWords.dropFirst().sink { [weak self] enabled in
             if !enabled { self?.highlightTask?.cancel(); self?.wordHighlighter.hide() }
         }.store(in: &cancellables)
         audio.didFinish = { [weak self] in self?.status = "Finished" }
@@ -194,12 +198,8 @@ import ApplicationServices
         originalText = text.text; chunks = Segmenter.split(text.text); source = text.source; note = text.note
         showPlayer?()
         guard !chunks.isEmpty else { error = "Enter or select some text first."; return }
-        if Segmenter.containsGreek(text.text) {
-            status = "Greek speech unavailable"
-            error = "Your verified Kokoro service has no Greek language pipeline or Greek voice. The original text is preserved in the reader. Greek and mixed Greek/English speech are disabled rather than mispronounced, translated, or sent to another provider."
-            showReader?(); return
-        }
-        play(from: 0)
+        if automaticallyPlay { play(from: 0) }
+        else { status = "Text ready" }
     }
     func connect() {
         guard !isConnecting else { return }; isConnecting = true; error = nil
@@ -207,34 +207,41 @@ import ApplicationServices
             defer { isConnecting = false }
             do {
                 let c = preferences.connection; try await tunnel.ensure(c)
-                let fetched = try await SpeechBackend(connection: c, token: SecretStore.read(SecretStore.key(for: c.serverURL))).voices()
+                let backend = SpeechBackend(connection: c, token: SecretStore.read(SecretStore.key(for: c.serverURL)))
+                let fetched = try await backend.voices()
+                let capabilities = try await backend.capabilities()
                 guard c == preferences.connection else { return }
-                voices = fetched; status = "Connected · Kokoro · \(voices.count) voices"
+                voices = fetched; speechCapabilities = capabilities
+                status = capabilities.supportsGreek ? "Connected · Kokoro + Supertonic 3 · Greek enabled" : "Connected · Kokoro · \(voices.count) voices"
                 if !voices.contains(c.voice) { error = "The selected voice is unavailable. Choose one from the live voice list." }
             } catch { self.error = error.localizedDescription; status = "Connection failed" }
         }
     }
     func play(from index: Int) {
         guard chunks.indices.contains(index) else { return }
-        guard !Segmenter.containsGreek(originalText) else { error = "Greek speech is unsupported by your verified Kokoro service."; return }
         stop(); error = nil; status = "Connecting…"
-        let c = preferences.connection, segments = chunks, id = requestID
+        let c = preferences.connection, segments = chunks, id = requestID, text = originalText
         readingTask = Task {
             do {
                 try await tunnel.ensure(c); try Task.checkCancellation()
-                let backend = SpeechBackend(connection: c, token: SecretStore.read(SecretStore.key(for: c.serverURL)))
-                let available = try await backend.voices(); try Task.checkCancellation()
+                let token = SecretStore.read(SecretStore.key(for: c.serverURL))
+                let discovery = SpeechBackend(connection: c, token: token)
+                let available = try await discovery.voices()
+                let capabilities = try await discovery.capabilities(); try Task.checkCancellation()
                 guard id == requestID else { return }
-                voices = available
-                guard voices.contains(c.voice) else { throw AppError.message("The configured voice is not in the live backend voice list.") }
-                let epoch = try audio.begin(at: index); status = "Reading"
+                voices = available; speechCapabilities = capabilities
+                let route = try SpeechRoute.resolve(text: text, connection: c, capabilities: capabilities, voices: available)
+                var selected = c; selected.voice = route.voice; selected.language = route.language
+                let backend = SpeechBackend(connection: selected, token: token, model: route.model)
+                let epoch = try audio.begin(at: index); status = "Reading · \(route.label) · \(route.voice)"
+                if !route.wordTimestamps { wordHighlightStatus = "Sentence highlighting · this voice has no verified word timings" }
                 for i in index..<segments.count {
                     // One streamed request at a time; no more than one following chunk is prefetched.
                     while audio.currentChunk < i-1 || audio.pendingFrames >= 24_000*8 || audio.isPaused {
                         try Task.checkCancellation(); try await Task.sleep(for: .milliseconds(50))
                     }
                     try Task.checkCancellation()
-                    if preferences.highlightWords {
+                    if preferences.highlightWords && route.wordTimestamps {
                         try await backend.captioned(text: segments[i].text) { [weak self] data, words in
                             guard let self else { throw CancellationError() }
                             for offset in stride(from: 0, to: data.count, by: 8192) {

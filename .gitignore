@@ -30,3 +30,9 @@ id_ed25519*
 /Validation/*.log
 /Validation/*.json
 /Validation/Reports/
+
+# Python backend environments and caches
+__pycache__/
+.pytest_cache/
+.venv/
+/Server/models/

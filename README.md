@@ -1,8 +1,8 @@
 # OpenReader Mac
 
-A native macOS reader built with SwiftUI, AppKit, Accessibility, ScreenCaptureKit, Vision, and AVAudioEngine. Read selected text in another app, visible window text, a chosen screen region, clipboard text, or pasted text using your own compatible Kokoro speech service.
+A native macOS reader built with SwiftUI, AppKit, Accessibility, ScreenCaptureKit, Vision, and AVAudioEngine. Read selected text in another app, visible window text, a chosen screen region, clipboard text, or pasted text using your own compatible speech service, with Kokoro for its existing languages and optional local Supertonic 3 for Greek and mixed Greek/English.
 
-Licensed under the [MIT License](LICENSE). The repository contains the Mac client; it does not bundle a speech server, model weights, SSH keys, account settings, or credentials.
+Licensed under the [MIT License](LICENSE). The repository contains the Mac client and an optional [multilingual server adapter](Server/README.md). The app does not bundle model weights, SSH keys, account settings, or credentials.
 
 ## Features
 
@@ -13,6 +13,10 @@ Licensed under the [MIT License](LICENSE). The repository contains the Mac clien
 - Word highlighting from validated Kokoro timestamps. For supported selections, a click-through overlay follows the word in the source app without changing its selection or document.
 - Customizable global shortcuts, conflict reporting, and per-shortcut disable switches. **Command is optional:** use Control, Option, or Command, optionally with Shift. Bare typing keys and Shift-only typing shortcuts are excluded. Option combinations can overlap with accented-character input; choose combinations that suit your keyboard layout.
 - Bounded streaming/prefetch, ordered playback, and cancellation that rejects stale responses.
+
+## Download
+
+Get the universal macOS app from [GitHub Releases](https://github.com/fazakis/openreadermac/releases/latest). It supports Apple Silicon and Intel Macs running macOS 14 or later. Release builds are ad-hoc signed, not Apple-notarized; Gatekeeper may require approval through System Settings → Privacy & Security → Open Anyway after an initial launch attempt.
 
 ## Build and run
 
@@ -74,7 +78,7 @@ Copy-based readings preserve the copied wording and show word progress in OpenRe
 
 Source overlays require real accessible word geometry and valid speech timestamps. Unsupported views, scanned PDFs, clipboard/paste readings, and OCR retain progress in the reader. Source geometry refreshes while playing or paused; the overlay hides for offscreen words, changed text, another window/tab, or another foreground app. The app does not automatically scroll your source document.
 
-The supported Kokoro configuration has no Greek speech pipeline. Greek and mixed Greek/English text are preserved, but speech is explicitly refused without translation or provider substitution. Vision OCR languages depend on the installed macOS revision; Greek OCR was unavailable on the development Mac. See [VALIDATION.md](VALIDATION.md) for tested behavior and remaining limits.
+With the multilingual server adapter, Greek and mixed Greek/English readings use your selected Supertonic 3 voice for the entire reading. English-only readings retain your regular voice. Test the connection to discover support, then choose the Greek voice under Settings → Playback. The app verifies server capabilities before synthesis; a legacy Kokoro-only server still refuses Greek. Text is not translated or sent to another provider. Supertonic currently uses sentence/chunk highlighting, while Kokoro retains validated word highlighting. Vision OCR languages depend on the installed macOS revision; Greek OCR was unavailable on the development Mac. See [VALIDATION.md](VALIDATION.md) for tested behavior and remaining limits.
 
 ## Default shortcuts
 
@@ -106,7 +110,7 @@ Shortcuts use `RegisterEventHotKey`; there is no typing event tap. Duplicate ass
 
 Live diagnostics are opt-in and synthesize audible fixture speech using your locally saved connection. Close the regular app first; run `Scripts/run_diagnostics.sh`. Diagnostics use separate local port `18881` for managed SSH and do not change server configuration. The source-position harness requires a selected fixture in Chrome or Preview: `Scripts/test_source_highlighting.sh com.google.Chrome`.
 
-For an opt-in live Copy integration test, build the disposable source app with `Scripts/build_copy_fixture.sh`, open `build/OpenReader Copy Fixture.app`, and run `Scripts/test_selection_copy.sh` from an Accessibility-authorized terminal. Keep the fixture in the foreground while the test runs. It checks the production Read selection flow and compares the restored clipboard without printing its contents. Its Greek fixture text stops before speech synthesis, so the test makes no backend request. The native clipboard tests use separate named pasteboards and never access the general clipboard.
+For an opt-in live Copy integration test, build the disposable source app with `Scripts/build_copy_fixture.sh`, open `build/OpenReader Copy Fixture.app`, and run `Scripts/test_selection_copy.sh` from an Accessibility-authorized terminal. Keep the fixture in the foreground while the test runs. It checks the production Read selection flow and compares the restored clipboard without printing its contents. The fixture runs in explicit extraction-only mode, so the test makes no backend request. The native clipboard tests use separate named pasteboards and never access the general clipboard.
 
 ## Signing
 

@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenReader multilingual speech API
+After=network-online.target kokoro-tts.service
+Wants=network-online.target kokoro-tts.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/openreader-speech
+Environment=SUPERTONIC_MODEL_DIR=%h/.local/share/openreader-speech/models/supertonic-3
+Environment=KOKORO_URL=http://127.0.0.1:8881
+Environment=HF_HUB_OFFLINE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/.local/share/openreader-speech/.venv/bin/uvicorn speech_api:app --host 127.0.0.1 --port 8880 --no-access-log
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

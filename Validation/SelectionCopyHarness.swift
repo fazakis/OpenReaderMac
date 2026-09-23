@@ -16,7 +16,7 @@ import ApplicationServices
         }
         let board = NSPasteboard.general
         let original = try ClipboardContents.capture(board)
-        let model = ReaderModel(registerShortcuts: false)
+        let model = ReaderModel(registerShortcuts: false, automaticallyPlay: false)
         guard model.preferences.automaticCopyFallback else { print("Fresh default was not enabled"); exit(3) }
         model.perform("selection")
         let deadline = ContinuousClock.now.advanced(by: .seconds(12))
@@ -33,8 +33,8 @@ import ApplicationServices
         print("PASS: production Read selection automatically used the real source Copy command")
         print("PASS: original clipboard items and formats restored")
         print("PASS: original Unicode text preserved and reader-only highlighting reported")
-        // Greek intentionally stops before synthesis, so this extraction test sends no text to a server.
-        guard model.status == "Greek speech unavailable" else { print("FAIL: unexpected synthesis path"); exit(6) }
+        // Extraction-only mode keeps the fixture independent of backend language support.
+        guard model.status == "Text ready" else { print("FAIL: unexpected synthesis path"); exit(6) }
         model.stop(); model.originalText = ""; model.error = nil
         model.preferences.automaticCopyFallback = false
         defer { UserDefaults.standard.removeObject(forKey: "automaticCopyFallback") }

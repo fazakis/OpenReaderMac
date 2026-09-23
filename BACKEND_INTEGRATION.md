@@ -2,7 +2,13 @@
 
 This document describes the service contract verified during development on 22 September 2026. Deployment addresses, SSH usernames, account email, internal account records, and private operational notes are intentionally excluded from the repository. The original deployment record is kept privately outside Git.
 
-## Supported service
+## Multilingual extension (1.5.0)
+
+The optional [local adapter](Server/README.md) keeps the endpoint and 24 kHz PCM contract unchanged. It proxies Kokoro and adds Supertonic 3. `GET /v1/capabilities` advertises Greek/mixed support, `greek_model`, `greek_voices`, `sample_rate`, and `greek_word_timestamps`. Only 404/405 are treated as a legacy Kokoro endpoint; authentication and other failures remain errors.
+
+The client chooses its configured Greek voice (default `st_f1`) and `model: supertonic-3` for the whole reading when Greek is present. All chunks retain that voice, including English-only chunks within a mixed reading. Existing preferences without a Greek voice migrate without losing SSH or voice settings. The adapter uses Greek `el` synthesis and explicit `el`/`en` language spans for mixed text, keeping the same voice and preserving every original character across spans, without translation. It resamples the native 44.1 kHz output to 24 kHz and does not fabricate timestamps. The Mac client uses raw PCM and sentence/chunk progress for these voices.
+
+## Original Kokoro service
 
 The client integrates with **Kokoro FastAPI 0.7.1**, verified at server source revision `b82122f`, using Kokoro v1.0 / Kokoro-82M speech weights. The API model ID is `kokoro`. It is a speech model, not a general-purpose LLM. The initial voice ID is `af_alloy`; voice discovery refreshes from the configured endpoint and unavailable voices are rejected rather than silently substituted.
 
@@ -81,6 +87,6 @@ Word mode buffers one bounded sentence before playback to validate all token map
 
 ## Languages
 
-The supported Kokoro pipeline includes American/British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese, and Mandarin. It has no Greek pipeline. Greek and mixed Greek/English speech are refused explicitly while preserving the original text. No alternate provider is substituted.
+The supported Kokoro pipeline includes American/British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese, and Mandarin. It has no Greek pipeline. On a legacy Kokoro-only endpoint, Greek and mixed Greek/English speech are refused explicitly while preserving the original text. With the multilingual extension above, they use the explicitly configured local Supertonic voice instead.
 
 Vision OCR language support is checked at runtime. Greek was absent from the development Mac's supported list. Accessibility, clipboard, and paste preserve Unicode independently of OCR and speech availability.
