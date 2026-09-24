@@ -70,6 +70,12 @@ In **Settings → Permissions**, you can also enable Accessibility to read other
 
 Focus the source app, select text, and use **Control–Option–Command–R**. Read selection tries Accessibility first. **Automatically use Copy when selected text is unavailable** is enabled by default, including on upgrade; disable it in **Settings → Permissions → Selection compatibility** to use Accessibility only. With the setting enabled, no extra confirmation is shown for each requested reading.
 
+Chrome can delay initializing its native accessibility tree. If it reports no
+focused element, OpenReader reads Chrome's application role once and briefly
+retries focus before continuing selection extraction. Keep the PDF or webpage
+foreground while this happens. Recovery stops on cancellation or a changed
+app/window/document; it does not toggle browser flags or reset permissions.
+
 Fallback invokes the source app’s enabled standard Copy menu command using Accessibility; it does not synthesize a keyboard shortcut. It checks the original foreground app, window, focused element, document, and any exposed selection range before invoking Copy. Secure fields and missing Accessibility permission do not trigger fallback. If the source changes or Copy is unavailable, choose Read clipboard or Select screen region explicitly. Apps with no usable Copy menu or insufficient focus information remain unsupported by automatic selection reading; this is not a guarantee for every application.
 
 The previous clipboard’s items and formats are held briefly in memory. Restoration occurs only after one observed ownership change remains stable and both the owner count and contents still match, immediately before writing. Newer or ambiguous changes are retained and the reading is stopped. Promised data, unreadable formats, and existing clipboard data over 16 MB are refused before Copy. An in-flight Copy has up to 1.2 seconds to finish, even after Stop, for cleanup only; cancelled text is never spoken. A very late Copy response can remain on the clipboard after timeout. macOS provides no atomic cross-process compare-and-restore operation, so restoration is best effort for truly simultaneous writers; the app does not continuously monitor or later roll back the clipboard.

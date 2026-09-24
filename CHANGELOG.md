@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.1
+
+- Recover Chrome webpage and PDF selections when native accessibility has not
+  initialized: read the application role once, then retry missing focus briefly.
+- Keep normal selection reading fast. Do not retry other applications or hide
+  permission/AX errors. Stop recovery on cancellation or a changed source context.
+- Preserve secure-field checks, verified Copy fallback, and existing speech setup.
+
 ## 1.5.0
 
 - Add Greek and mixed Greek/English speech with a local Supertonic 3 backend.

@@ -50,10 +50,53 @@ actor TextExtractor {
         guard source.pid != ProcessInfo.processInfo.processIdentifier else { throw AppError.message("Focus the source application first, then use a global reading shortcut.") }
         let app = AXUIElementCreateApplication(source.pid); AXUIElementSetMessagingTimeout(app, 0.25); return app
     }
-    func selection(_ source: SourceApp) throws -> ExtractedText {
+    private func readFocus(_ app: AXUIElement) -> SelectionFocusRead<AXUIElement> {
+        var raw: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &raw)
+        if result == .noValue { return .noValue }
+        guard result == .success else { return .failed(result.rawValue) }
+        guard let raw, CFGetTypeID(raw) == AXUIElementGetTypeID() else { return .failed(AXError.failure.rawValue) }
+        return .found(raw as! AXUIElement)
+    }
+    private func selectionFocus(_ app: AXUIElement, source: SourceApp) async throws -> AXUIElement {
+        let initial = readFocus(app)
+        let chromeIDs = ["com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary"]
+        let isChrome = NSRunningApplication(processIdentifier: source.pid)?.bundleIdentifier.map { chromeIDs.contains($0) } ?? false
+        var result = initial
+        if isChrome, case .noValue = initial, let window = element(app, kAXFocusedWindowAttribute) {
+            let document = string(window, kAXDocumentAttribute), title = string(window, kAXTitleAttribute)
+            let system = AXUIElementCreateSystemWide(); AXUIElementSetMessagingTimeout(system, 0.25)
+            do {
+                result = try await SelectionFocusRecovery.recover(initial: initial, eligible: true, initialize: {
+                    // Chrome activates native accessibility when its application role is read.
+                    var role: CFTypeRef?
+                    return AXUIElementCopyAttributeValue(app, kAXRoleAttribute as CFString, &role) == .success
+                }, read: { self.readFocus(app) }, contextIsCurrent: {
+                    guard let front = self.element(system, kAXFocusedApplicationAttribute) else { return false }
+                    var pid: pid_t = 0
+                    guard AXUIElementGetPid(front, &pid) == .success, pid == source.pid,
+                          let current = self.element(app, kAXFocusedWindowAttribute), CFEqual(current, window) else { return false }
+                    return (document.isEmpty || self.string(current, kAXDocumentAttribute) == document)
+                        && (title.isEmpty || self.string(current, kAXTitleAttribute) == title)
+                })
+            } catch SelectionFocusRecoveryError.sourceChanged {
+                throw AppError.message("The source app, window, or document changed while Chrome initialized accessibility. Return to the selection and retry.")
+            }
+        }
+        try Task.checkCancellation()
+        switch result {
+        case .found(let focused): return focused
+        case .noValue:
+            throw AppError.message("\(source.name) has not exposed its focused selection. Keep its document foreground, select text, and retry. You can also copy it and use Read clipboard, or choose a screen region.")
+        case .failed(let code):
+            throw AppError.message("Could not query \(source.name)’s accessibility focus (error \(code)). Check Accessibility access for the installed OpenReader app, then retry.")
+        }
+    }
+    func selection(_ source: SourceApp) async throws -> ExtractedText {
+        try Task.checkCancellation()
         anchor = nil; copyTarget = nil
         let app = try app(source)
-        guard let focused = element(app, kAXFocusedUIElementAttribute) else { throw AppError.message("\(source.name) does not expose a focused text selection. Use Read clipboard or Select screen region explicitly.") }
+        let focused = try await selectionFocus(app, source: source)
         var ancestor: AXUIElement? = focused
         for _ in 0..<50 {
             guard let item = ancestor else { break }

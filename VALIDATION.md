@@ -1,5 +1,31 @@
 # Validation record
 
+## Version 1.5.1 — Chrome accessibility initialization (24 September 2026)
+
+- Root-cause evidence came from the affected Mac's controlled diagnostic: Chrome
+  returned `kAXErrorNoValue` (-25212) for focused UI element, while focused window
+  and the enabled Copy command were available. A single application-level AXRole
+  read followed by a one-second wait made focus and selected text available; the
+  user confirmed both webpage and PDF reading in the unchanged app.
+- The fix performs that role read only for Google Chrome variants reporting
+  `.noValue`, then retries with a two-second deadline and a ten-poll cap. It keeps
+  secure-field and Copy-target checks intact and checks the original app/window
+  plus any initially available document/title metadata around each focus probe.
+- **33 Swift core tests** passed, including nine recovery tests covering delayed
+  focus, no overhead for warm focus, non-Chrome/permission failures, bounded
+  retries, role-read failure, source changes during waiting and querying,
+  cancellation, and subsequent AX errors. These tests use controlled probe
+  responses; they are not a claim of another live cold-Chrome reproduction.
+- **15 native clipboard checks** and **11 native shortcut checks** passed using
+  the existing production regression harnesses, for **59 automated checks** in
+  this release. Clipboard checks use separate named pasteboards.
+- Universal **arm64 + x86_64** Release build **1.5.1 (7)** succeeded on macOS 26.0
+  with Xcode 26.2; minimum macOS remains 14. The installed app was not replaced
+  during development. No server changes were needed.
+- Both binary architectures and the final ad-hoc signature were verified. The
+  app is not Apple-notarized; runtime checks were not performed on Intel.
+
+
 ## Version 1.5.0 — multilingual speech (23 September 2026)
 
 - Built on Apple Silicon with macOS 26.0 and Xcode 26.2. The Release app is
