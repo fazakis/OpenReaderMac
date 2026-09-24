@@ -1,5 +1,13 @@
 # Changelog
 
+## Server full-PDF compatibility hotfix — 24 September 2026
+
+- Handle PDFium's bounded/character extraction marker `U+0002` as well as the
+  range API's `U+FFFE`, plus verified legacy parentheses, en-dash and bullet slots.
+- Audit complete documents through multiple extractors and actual app chunking;
+  provide an offline corpus checker that reports counts/code points, not text.
+- Server-only update compatible with Mac 1.5.2; reader text and Kokoro unchanged.
+
 ## Server ligature hotfix — 24 September 2026
 
 - Repair legacy PDF `ff`/`fi`/`fl`/`ffi`/`ffl` codes inside dictionary-verified

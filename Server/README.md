@@ -57,8 +57,9 @@ to the network. Request bodies/audio are held in memory; access logging is off.
 - Select `model: "supertonic-3"` and a `st_` voice for Greek or mixed text.
   Greek-only input uses `el`; mixed Greek/English input is split at script boundaries and synthesized with explicit `el`/`en` using the same voice. The split preserves every character of the synthesis text across those spans.
   Other supported explicit language codes are passed to the SDK.
-- Before Supertonic synthesis, remove only PDFium's invisible discretionary-hyphen
-  marker `U+FFFE` and the standard soft hyphen `U+00AD` from a speech-only copy.
+- Before Supertonic synthesis, remove PDFium's invisible discretionary-hyphen
+  markers `U+FFFE` (range extraction) and `U+0002` (bounded/character extraction),
+  plus the standard soft hyphen `U+00AD`, from a speech-only copy.
   These otherwise cause Supertonic validation to reject an entire request.
   Greek letters, mathematical symbols, accents, visible hyphens and the reader's
   original text are not changed. Kokoro requests still pass through byte-for-byte.
@@ -66,6 +67,12 @@ to the network. Request bodies/audio are held in memory; access logging is off.
   timestamps are invented. Marker-only input is rejected before synthesis.
   This is not a general broken-font repair: ambiguous control codes standing in
   for arbitrary glyphs are not blindly deleted or expanded.
+- A documented legacy TeX punctuation compatibility table maps `U+0012` and
+  `U+0013` to parentheses, `U+0015` to an en dash, and `U+0088` to a bullet.
+  These mappings were checked against rendered glyphs and full-document text,
+  including isolated punctuation chunks. Changes add `pdf-punctuation` to the
+  cleanup header. This is a known-encoding compatibility rule, not a claim that
+  every PDF font uses these code slots identically. Other controls are retained.
 - Legacy TeX PDF ligature codes `U+001B`–`U+001F` are expanded to `ff`, `fi`,
   `fl`, `ffi`, `ffl` only inside Latin-word tokens whose repaired spelling is
   recognized by the pinned, locally installed CMU pronunciation dictionary.
@@ -114,3 +121,20 @@ cover transparent Kokoro proxying, discovery, Unicode preservation, voice errors
 run `Scripts/test_speech_backend.sh http://127.0.0.1:18880/v1` to exercise real
 ReaderModel → speech API → muted AVAudioEngine playback and cancellation. The
 harness uses disposable preferences, leaving the installed app's settings intact.
+
+For full-document character auditing, extract **all pages** using both PDFium
+range and bounded/character APIs (their hyphen markers differ), and compare
+PDFKit/pypdf where available. Include actual client chunks as well as whole pages.
+Keep this private corpus outside Git as a JSON object of named string arrays:
+`{"extractor-pages": ["..."], "extractor-app-chunks": ["..."]}`. Then run:
+
+```sh
+.venv/bin/python Server/audit_text.py /private/path/corpus.json \
+  --indexer /path/to/supertonic-3/onnx/unicode_indexer.json
+```
+
+The auditor uses the installed SDK's validator before/after the adapter's real
+preparation and language splitting. It prints only counts/code points, exits
+nonzero if unsupported characters remain, and does not run inference or contact
+a speech service. Follow this with representative raw/captioned API audio tests;
+character validation alone is not a pronunciation or full-playback test.

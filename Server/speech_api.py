@@ -23,9 +23,12 @@ LATIN = re.compile(r"[A-Za-z]")
 VOICES = [f"st_{gender}{i}" for gender in ("f", "m") for i in range(1, 6)]
 SAMPLE_RATE = 24000
 HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length"}
-# PDFium emits U+FFFE for some discretionary line-end hyphens. U+00AD is
-# the standard soft hyphen. Neither is spoken text; keep all other scalars.
-PDF_HYPHENATION_MARKERS = str.maketrans({"\ufffe": None, "\u00ad": None})
+# PDFium's range API emits U+FFFE for discretionary hyphens; its bounded-text
+# and character APIs expose the same positions as U+0002. Include both paths.
+PDF_HYPHENATION_MARKERS = str.maketrans({"\ufffe": None, "\x02": None, "\u00ad": None})
+# Legacy TeX PDF glyph slots seen in otherwise ordinary extracted prose/math.
+# This explicit compatibility table is not a blanket purge of control codes.
+PDF_PUNCTUATION = str.maketrans({"\x12": "(", "\x13": ")", "\x15": "–", "\x88": "•"})
 PDF_LIGATURES = str.maketrans(dict(zip("\x1b\x1c\x1d\x1e\x1f", ["ff", "fi", "fl", "ffi", "ffl"])))
 BROKEN_LATIN_WORD = re.compile(r"(?<!\w)[A-Za-z\x1b-\x1f]+(?:[-'][A-Za-z\x1b-\x1f]+)*(?!\w)")
 MATH_NAMES = {
@@ -63,6 +66,10 @@ def repair_pdf_ligatures(text):
 def prepare_supertonic_text(text):
     cleaned = text.translate(PDF_HYPHENATION_MARKERS)
     changes = ["pdf-hyphenation"] if cleaned != text else []
+    punctuation = cleaned.translate(PDF_PUNCTUATION)
+    if punctuation != cleaned:
+        changes.append("pdf-punctuation")
+        cleaned = punctuation
     repaired = repair_pdf_ligatures(cleaned)
     if repaired != cleaned:
         changes.append("pdf-ligatures")
@@ -241,7 +248,7 @@ def create_app(engine=None, upstream=None, transport=None):
         if not text.strip() or len(text) > 10000:
             raise HTTPException(422, "input must contain 1–10000 characters")
         # Clean only the Supertonic synthesis copy, never the reader/source text
-        # or proxied Kokoro requests. Do not guess repairs for broken PDF fonts.
+        # or proxied Kokoro requests. Only documented compatibility mappings apply.
         speech_text, cleanup = prepare_supertonic_text(text)
         if not speech_text.strip():
             raise HTTPException(422, "input contains no speakable text after PDF marker cleanup")

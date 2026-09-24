@@ -1,5 +1,30 @@
 # Validation record
 
+## Full-PDF extraction compatibility — 24 September 2026
+
+- Reproduced the previously missed `U+0002` through PDFium bounded-text and raw
+  character APIs. All **228 positions** match the range API's `U+FFFE` artifacts.
+  Earlier audits covered range extraction only and therefore missed this path.
+- Audited **all 31 pages** through PDFium range, bounded and character extraction,
+  pypdf, and native PDFKit. Compiled the production Swift `Segmenter` for each
+  output: **11,745 chunks** total across the five variants (overlapping content,
+  not that many distinct passages). Each complete page and each chunk passes
+  the installed Supertonic character validator after preparation/language runs.
+- Verified the remaining legacy control glyphs against the rendered document:
+  `U+0012/0013` parentheses, `U+0015` en dash, `U+0088` bullet. These explicit
+  mappings preserve punctuation rather than deleting arbitrary control codes.
+- **54 server tests pass**, including both API contracts, extraction variants,
+  combined markers/ligatures/math, isolated delimiter chunks, unchanged Greek,
+  marker-only rejection and byte-for-byte Kokoro forwarding.
+- Staging and production audio checks passed for real chunks containing each
+  remaining code, isolated parentheses, combined mixed-language captioned input,
+  and previous PDF-marker/ligature/Greek/English/Kokoro regressions. PCM was
+  nonempty, even-length and nonzero; no new listening-quality claim is made.
+  The complete corpus also passes against the deployed source and model index.
+- This audit establishes zero remaining unsupported-character failures in the
+  supplied extraction corpus, not perfect mathematical pronunciation or universal
+  PDF decoding. The private manuscript and corpus remain outside Git.
+
 ## Server ligature hotfix — 24 September 2026
 
 - The updated client identified `U+001B` as the remaining rejection. In the

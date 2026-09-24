@@ -6,7 +6,7 @@ import httpx
 import numpy as np
 import pytest
 
-from speech_api import create_app, language_for, language_runs, pcm24, UnsupportedSpeechCharacters, SupertonicEngine, repair_pdf_ligatures
+from speech_api import create_app, language_for, language_runs, pcm24, UnsupportedSpeechCharacters, SupertonicEngine, repair_pdf_ligatures, prepare_supertonic_text
 
 
 class FakeEngine:
@@ -88,7 +88,7 @@ def test_pdf_markers_are_removed_only_from_supertonic_synthesis_copy(server, end
         assert len(response.content) == 48000
 
 
-@pytest.mark.parametrize("text", ["\ufffe", " \u00ad\ufffe\n", "\ufffe" * 10001])
+@pytest.mark.parametrize("text", ["\ufffe", " \u00ad\ufffe\n", "\ufffe" * 10001, "\x02", " \x02\u00ad\ufffe\n"])
 def test_marker_only_or_original_oversize_input_does_not_synthesize(server, text):
     client, engine, requests = server
     response = client.post("/v1/audio/speech", json={"voice": "st_f1", "input": text})
@@ -98,7 +98,7 @@ def test_marker_only_or_original_oversize_input_does_not_synthesize(server, text
 
 def test_kokoro_pdf_input_is_still_forwarded_byte_for_byte(server):
     client, engine, requests = server
-    body = b'{"model":"kokoro", "voice":"af_alloy", "input":"neigh\\ufffebourhoods and soft\\u00adhyphens"}'
+    body = b'{"model":"kokoro", "voice":"af_alloy", "input":"neigh\\ufffebourhoods and soft\\u00adhyphens \\u0002 \\u0012 \\u0013 \\u0015 \\u0088"}'
     response = client.post("/dev/captioned_speech", content=body, headers={"content-type": "application/json"})
     assert response.status_code == 200
     assert requests[-1].content == body
@@ -216,3 +216,44 @@ def test_mixed_language_runs_preserve_every_character_and_force_pronunciation():
                     ("Διαβάζουμε ελληνικά ", "el"), ("and English, 12.5%.", "en")]
     for source in [" API στα Ελληνικά!", "👋 Γεια API.", "Ἑλληνικά and English", "Hello", "Ελληνικά", "123 45"]:
         assert "".join(part for part, _ in language_runs(source)) == source
+
+
+@pytest.mark.parametrize("marker", ["\x02", "\ufffe", "\u00ad"])
+@pytest.mark.parametrize("endpoint", ["/v1/audio/speech", "/dev/captioned_speech"])
+def test_pdf_extraction_variants_before_synthesis(server, marker, endpoint):
+    client, engine, upstream = server
+    text = f"Two neigh{marker}bourhoods; κ = 1. Καλημέρα."
+    response = client.post(endpoint, json={"model": "supertonic-3", "voice": "st_f1", "input": text, "response_format": "pcm"})
+    assert response.status_code == 200
+    assert engine.calls[0][0] == "Two neighbourhoods; κ = 1. Καλημέρα."
+    assert response.headers["x-speech-text-cleanup"] == "pdf-hyphenation"
+    assert not upstream
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("Scores \x12x + y\x13.", "Scores (x + y)."),
+    ("Range 1\x155, left\x15right.", "Range 1–5, left–right."),
+    ("\x88 A list item.", "• A list item."),
+    ("\x12", "("),  # App sentence boundaries can isolate a delimiter.
+    ("\x13", ")"),
+    ("\x15", "–"),
+    ("\x88", "•"),
+])
+def test_verified_legacy_punctuation_including_isolated_chunks(source, expected):
+    assert prepare_supertonic_text(source) == (expected, ["pdf-punctuation"])
+
+
+def test_combined_pdf_artifacts_are_handled_in_one_request(server):
+    client, engine, _ = server
+    source = "\x88 The e\x1bects in neigh\x02bourhoods, pages 1\x153: \x12κ ≤ 1\x13."
+    response = client.post("/v1/audio/speech", json={"voice": "st_f1", "input": source, "response_format": "pcm"})
+    assert response.status_code == 200
+    assert engine.calls[0][0] == "• The effects in neighbourhoods, pages 1–3: (κ  less than or equal to  1)."
+    assert response.headers["x-speech-text-cleanup"] == "pdf-hyphenation,pdf-punctuation,pdf-ligatures,math-symbols"
+
+
+def test_no_general_control_purge_or_unrelated_text_rewriting():
+    # Unknown glyph encodings remain visible to validation. Normal Greek,
+    # whitespace, punctuation, mathematical letters and numbers are untouched.
+    source = "\x00\x01\x03\x04\x07\x0e\x11\x14\x16\x17\x18\x19\x1a\x7f Hello\tκόσμε\r\nα = 0.5 (x-y)!"
+    assert prepare_supertonic_text(source) == (source, [])
