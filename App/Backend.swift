@@ -24,22 +24,39 @@ struct SpeechBackend: Sendable {
         c.urlCache = nil; c.httpCookieStorage = nil; c.timeoutIntervalForRequest = 90; c.timeoutIntervalForResource = 180
         return URLSession(configuration: c, delegate: NoRedirect(), delegateQueue: nil)
     }
-    private func check(_ response: URLResponse, audio: Bool = false) throws {
+    private func check(_ response: URLResponse, audio: Bool = false, detail: Data? = nil) throws {
         guard let http = response as? HTTPURLResponse else { throw AppError.message("The server returned an invalid response.") }
         switch http.statusCode {
         case 200...299: break
         case 401, 403: throw AppError.message("Authentication was rejected. Check SSH access or the API credential in Settings. No automatic login retries were made.")
         case 300...399: throw AppError.message("The address redirected to another page. Use the verified speech API, not the web login gateway.")
         case 429: throw AppError.message("The server is rate limited. Wait before trying again.")
+        case 422:
+            let reason = detail.flatMap(SpeechFailureDetail.parse) ?? "The server rejected the speech input or settings."
+            throw AppError.message("Speech request rejected (HTTP 422, \(model), \(connection.voice)): \(reason) No audio was replayed automatically.")
         default: throw AppError.message("The speech server returned HTTP \(http.statusCode). No audio was replayed automatically.")
         }
         if audio && !(http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().hasPrefix("audio/pcm") {
             throw AppError.message("Expected the verified 24 kHz PCM stream, but the server returned a different format.")
         }
     }
+    private func check(_ response: URLResponse, bytes: URLSession.AsyncBytes, audio: Bool = false) async throws {
+        var detail: Data?
+        if let http = response as? HTTPURLResponse, http.statusCode == 422,
+           (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().hasPrefix("application/json") {
+            var body = Data()
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                body.append(byte)
+                if body.count > SpeechFailureDetail.maximumBytes { break }
+            }
+            detail = body
+        }
+        try check(response, audio: audio, detail: detail)
+    }
     func voices() async throws -> [String] {
         let s = session(); defer { s.invalidateAndCancel() }
-        let (data, response) = try await s.data(for: request("audio/voices")); try check(response)
+        let (data, response) = try await s.data(for: request("audio/voices")); try check(response, detail: data)
         guard data.count < 1_000_000, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AppError.message("Invalid voice list.") }
         let voices = (object["voices"] as? [String]) ?? (object["voices"] as? [[String: String]])?.compactMap { $0["id"] } ?? []
         guard !voices.isEmpty else { throw AppError.message("The speech API returned no voices.") }
@@ -49,7 +66,7 @@ struct SpeechBackend: Sendable {
         let s = session(); defer { s.invalidateAndCancel() }
         let (data, response) = try await s.data(for: request("capabilities"))
         if let http = response as? HTTPURLResponse, [404, 405].contains(http.statusCode) { return .kokoro }
-        try check(response)
+        try check(response, detail: data)
         guard data.count < 100_000 else { throw AppError.message("Invalid speech capabilities response.") }
         return try JSONDecoder().decode(SpeechCapabilities.self, from: data)
     }
@@ -67,7 +84,7 @@ struct SpeechBackend: Sendable {
         if connection.language != "auto" { body["lang_code"] = connection.language }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let s = session(); defer { s.invalidateAndCancel() }
-        let (bytes,response) = try await s.bytes(for: req); try check(response)
+        let (bytes,response) = try await s.bytes(for: req); try await check(response, bytes: bytes)
         guard (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("application/json") == true else { throw AppError.message("The caption endpoint returned an unexpected format. Disable word highlighting to use the PCM endpoint.") }
         var line = Data(), accumulatedAudio = Data(), allTimes: [WordTimestamp] = []
         // One app chunk is at most 350 characters. Buffer this bounded sentence so timing
@@ -97,7 +114,7 @@ struct SpeechBackend: Sendable {
         if connection.language != "auto" { body["lang_code"] = connection.language }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let s = session(); defer { s.invalidateAndCancel() }
-        let (bytes, response) = try await s.bytes(for: req); try check(response, audio: true)
+        let (bytes, response) = try await s.bytes(for: req); try await check(response, bytes: bytes, audio: true)
         var chunk = Data(), total = 0
         for try await byte in bytes {
             try Task.checkCancellation(); chunk.append(byte); total += 1

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.2
+
+- Show bounded speech-validation details for HTTP 422, including the selected
+  engine/voice, instead of discarding the server's explanation. Error responses
+  never enqueue audio and are not retried automatically.
+- The server speaks names for common previously rejected mathematical symbols
+  while preserving original displayed text. Remaining unsupported characters
+  are identified by Unicode code point, with OCR guidance for broken PDF fonts.
+- Keep authentication handling, speech streaming, Chrome recovery and existing
+  voice/connection settings unchanged.
+
 ## Server hotfix — 24 September 2026
 
 - Prevent Supertonic HTTP 422 failures from PDFium `U+FFFE` hyphenation markers

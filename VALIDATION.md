@@ -1,5 +1,25 @@
 # Validation record
 
+## Version 1.5.2 — speech validation diagnostics and math symbols
+
+- A full PDFium character audit of the reported PDF found additional unsupported
+  mathematical symbols and ambiguous embedded-font control codes beyond the two
+  hyphenation markers addressed by the first server hotfix. The newly reported
+  failing selection was not supplied, so this does not attribute every 422 to
+  one specific character or claim all PDF font damage is repaired.
+- **39 core tests**, **24 server tests**, and **12 native HTTP checks** passed.
+  Native checks exercised actual URLSession raw/captioned paths against a
+  loopback fixture: structured 422, oversized/HTML errors, unchanged 401/503
+  handling, no audio on failure, and unchanged successful PCM delivery.
+- The server maps ten known mathematical symbols to spoken names, preserves
+  Greek/prose and the reader text, and identifies remaining unsupported scalars.
+  Controlled tests verify that request text is not included in validation logs
+  or structured character-error responses and the queue is released on failure.
+- Universal Release **1.5.2 (8)** built on macOS 26 / Xcode 26.2. Minimum macOS
+  remains 14. The installed app and existing permission grants were not replaced.
+- Ambiguous legacy font codes are deliberately not guessed: use explicit region
+  OCR or corrected pasted text. This version is not a universal PDF repair tool.
+
 ## Server PDF-marker hotfix — 24 September 2026
 
 - Reproduced Supertonic HTTP 422 using a PDFium-extracted passage with `U+FFFE`

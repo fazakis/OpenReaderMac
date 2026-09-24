@@ -6,7 +6,7 @@ import httpx
 import numpy as np
 import pytest
 
-from speech_api import create_app, language_for, language_runs, pcm24
+from speech_api import create_app, language_for, language_runs, pcm24, UnsupportedSpeechCharacters, SupertonicEngine
 
 
 class FakeEngine:
@@ -104,6 +104,48 @@ def test_kokoro_pdf_input_is_still_forwarded_byte_for_byte(server):
     assert requests[-1].content == body
     assert "x-speech-text-cleanup" not in response.headers
     assert not engine.calls
+
+
+@pytest.mark.parametrize("text,expected,language", [
+    ("x ≤ 1; ∆x ≥ 0; x ∈ A ∪ B; x′ ∗ y ⋆ z; ∥x∥ ↑", "x  less than or equal to  1;  delta x  greater than or equal to  0; x  is an element of  A  union  B; x prime   asterisk  y  star  z;  double vertical bar x double vertical bar   up arrow ", "na"),
+    ("Η τιμή α ≤ β", "Η τιμή α  μικρότερο ή ίσο του  β", "el"),
+])
+def test_math_names_preserve_prose_and_greek_letters(server, text, expected, language):
+    client, engine, _ = server
+    response = client.post("/v1/audio/speech", json={"voice": "st_f1", "input": text, "response_format": "pcm"})
+    assert response.status_code == 200
+    assert engine.calls == [(expected, "st_f1", language, 1.0)]
+    assert response.headers["x-speech-text-cleanup"] == "math-symbols"
+
+
+def test_unsupported_characters_are_identified_without_logging_document_text(caplog):
+    class RejectOnce(FakeEngine):
+        def synthesize(self, *args):
+            if not self.calls:
+                self.calls.append(args)
+                raise UnsupportedSpeechCharacters(["\x1b"])
+            return super().synthesize(*args)
+    engine = RejectOnce()
+    with TestClient(create_app(engine, transport=httpx.MockTransport(lambda r: httpx.Response(200)))) as client:
+        response = client.post("/v1/audio/speech", json={"voice": "st_f1", "input": "PRIVATE-DOCUMENT-EXAMPLE e\x1bects"})
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert detail["code"] == "unsupported_characters"
+        assert detail["codepoints"] == ["U+001B"]
+        assert "Select screen region" in detail["message"]
+        assert "PRIVATE-DOCUMENT-EXAMPLE" not in response.text + caplog.text
+        assert "U+001B" in caplog.text
+        # Validation failures must release the synthesis slot.
+        assert client.post("/v1/audio/speech", json={"voice": "st_f1", "input": "Valid", "response_format": "pcm"}).status_code == 200
+
+
+def test_real_engine_preflight_stops_before_inference_for_unsupported_input():
+    from types import SimpleNamespace
+    engine = object.__new__(SupertonicEngine)
+    engine.tts = SimpleNamespace(model=SimpleNamespace(text_processor=SimpleNamespace(validate_text=lambda text: (False, ["\x1b"]))))
+    with pytest.raises(UnsupportedSpeechCharacters) as error:
+        engine.synthesize("e\x1bects", "st_f1", "en", 1)
+    assert error.value.codepoints == ["U+001B"]
 
 
 def test_discovery_and_models(server):

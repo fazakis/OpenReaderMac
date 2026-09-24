@@ -3,6 +3,7 @@ import asyncio
 import base64
 from contextlib import asynccontextmanager
 import json
+import logging
 import math
 import os
 import re
@@ -24,6 +25,31 @@ HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length"
 # PDFium emits U+FFFE for some discretionary line-end hyphens. U+00AD is
 # the standard soft hyphen. Neither is spoken text; keep all other scalars.
 PDF_HYPHENATION_MARKERS = str.maketrans({"\ufffe": None, "\u00ad": None})
+MATH_NAMES = {
+    "′": ("prime", "τόνος"), "↑": ("up arrow", "βέλος προς τα πάνω"),
+    "∆": ("delta", "δέλτα"), "∈": ("is an element of", "ανήκει στο"),
+    "∗": ("asterisk", "αστερίσκος"), "∥": ("double vertical bar", "διπλή κάθετη γραμμή"),
+    "∪": ("union", "ένωση"), "≤": ("less than or equal to", "μικρότερο ή ίσο του"),
+    "≥": ("greater than or equal to", "μεγαλύτερο ή ίσο του"), "⋆": ("star", "αστέρι"),
+}
+logger = logging.getLogger("openreader.speech")
+
+
+def prepare_supertonic_text(text):
+    cleaned = text.translate(PDF_HYPHENATION_MARKERS)
+    changes = ["pdf-hyphenation"] if cleaned != text else []
+    # Speak literal operator names, without translating prose or interpreting
+    # equations. English prose uses English names; Greek-only prose uses Greek.
+    language = 1 if GREEK.search(cleaned) and not LATIN.search(cleaned) else 0
+    if any(char in cleaned for char in MATH_NAMES):
+        cleaned = "".join(" " + MATH_NAMES[char][language] + " " if char in MATH_NAMES else char for char in cleaned)
+        changes.append("math-symbols")
+    return cleaned, changes
+
+
+class UnsupportedSpeechCharacters(ValueError):
+    def __init__(self, characters):
+        self.codepoints = [f"U+{ord(char):04X}" for char in sorted(set(characters))][:16]
 
 
 def language_for(text, requested=None):
@@ -67,6 +93,9 @@ class SupertonicEngine:
         self.styles = {name: self.tts.get_voice_style(name[3:].upper()) for name in VOICES}
 
     def synthesize(self, text, voice, language, speed):
+        valid, unsupported = self.tts.model.text_processor.validate_text(text)
+        if not valid:
+            raise UnsupportedSpeechCharacters(unsupported)
         audio = []
         for fragment, lang in language_runs(text, language):
             wav, _ = self.tts.synthesize(fragment, voice_style=self.styles[voice], lang=lang,
@@ -184,7 +213,7 @@ def create_app(engine=None, upstream=None, transport=None):
             raise HTTPException(422, "input must contain 1–10000 characters")
         # Clean only the Supertonic synthesis copy, never the reader/source text
         # or proxied Kokoro requests. Do not guess repairs for broken PDF fonts.
-        speech_text = text.translate(PDF_HYPHENATION_MARKERS)
+        speech_text, cleanup = prepare_supertonic_text(text)
         if not speech_text.strip():
             raise HTTPException(422, "input contains no speakable text after PDF marker cleanup")
         try:
@@ -208,13 +237,20 @@ def create_app(engine=None, upstream=None, transport=None):
                 return Response(status_code=499)
             pcm = await anyio.to_thread.run_sync(request.app.state.engine.synthesize,
                 speech_text, voice, language_for(speech_text, payload.get("lang_code")), speed)
+        except UnsupportedSpeechCharacters as error:
+            # Log only code points, never document text, credentials, or audio.
+            logger.warning("speech_validation model=supertonic-3 code=unsupported_characters codepoints=%s", ",".join(error.codepoints))
+            raise HTTPException(422, {"code": "unsupported_characters", "codepoints": error.codepoints,
+                "message": "Supertonic cannot read these characters: " + ", ".join(error.codepoints)
+                + ". For broken PDF font text, use Select screen region or corrected pasted text."}) from None
         except ValueError:
+            logger.warning("speech_validation model=supertonic-3 code=invalid_model_input")
             raise HTTPException(422, "The model cannot synthesize this text or language") from None
         finally:
             request.app.state.queue.release()
         headers = {"X-Sample-Rate": str(SAMPLE_RATE), "X-Speech-Model": "supertonic-3", "X-Speech-Voice": voice}
-        if speech_text != text:
-            headers["X-Speech-Text-Cleanup"] = "pdf-hyphenation"
+        if cleanup:
+            headers["X-Speech-Text-Cleanup"] = ",".join(cleanup)
         if captioned:
             packet = {"audio": base64.b64encode(pcm).decode(), "audio_format": "audio/pcm", "timestamps": []}
             return Response(json.dumps(packet) + "\n", media_type="application/json", headers=headers)

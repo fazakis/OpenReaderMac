@@ -66,6 +66,16 @@ to the network. Request bodies/audio are held in memory; access logging is off.
   timestamps are invented. Marker-only input is rejected before synthesis.
   This is not a general broken-font repair: ambiguous control codes standing in
   for PDF ligatures are not guessed or expanded.
+- Supertonic receives spoken names for a small set of otherwise rejected math
+  symbols (`′ ↑ ∆ ∈ ∗ ∥ ∪ ≤ ≥ ⋆`). English/mixed prose uses English names;
+  Greek-only prose uses Greek names. Equations are not parsed or rearranged.
+  This is reported as `math-symbols` in `X-Speech-Text-Cleanup` and affects only
+  the speech copy, never the reader's original text.
+- Remaining unsupported characters return structured HTTP 422 details listing
+  Unicode code points. Only these codes are logged, not document content.
+  OpenReader Mac 1.5.2 displays the reason and selected engine/voice. Corrupt font
+  mappings require OCR (explicit **Select screen region**) or corrected text;
+  silently deleting letters or guessing their meaning would change the document.
 - Greek sent with a Kokoro voice is rejected, not transliterated or silently
   substituted. The Mac app selects the configured Greek voice explicitly.
 - Supertonic output is resampled to 24 kHz. PCM, WAV, MP3, FLAC, Opus and AAC are
