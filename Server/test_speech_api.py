@@ -6,7 +6,7 @@ import httpx
 import numpy as np
 import pytest
 
-from speech_api import create_app, language_for, language_runs, pcm24, UnsupportedSpeechCharacters, SupertonicEngine
+from speech_api import create_app, language_for, language_runs, pcm24, UnsupportedSpeechCharacters, SupertonicEngine, repair_pdf_ligatures
 
 
 class FakeEngine:
@@ -74,13 +74,13 @@ def test_no_fabricated_word_timestamps(server):
 def test_pdf_markers_are_removed_only_from_supertonic_synthesis_copy(server, endpoint):
     client, engine, requests = server
     original = "Two neigh\ufffebourhoods and soft\u00adhyphens. κ(x) = 1; γ = 0.15; cafe\u0301; the \x1cnal result."
-    expected = "Two neighbourhoods and softhyphens. κ(x) = 1; γ = 0.15; cafe\u0301; the \x1cnal result."
+    expected = "Two neighbourhoods and softhyphens. κ(x) = 1; γ = 0.15; cafe\u0301; the final result."
     response = client.post(endpoint, json={"model": "supertonic-3", "voice": "st_f1",
                                           "input": original, "response_format": "pcm"})
     assert response.status_code == 200
     assert engine.calls == [(expected, "st_f1", "na", 1.0)]
     assert not requests  # Never fall back to Kokoro or another provider.
-    assert response.headers["x-speech-text-cleanup"] == "pdf-hyphenation"
+    assert response.headers["x-speech-text-cleanup"] == "pdf-hyphenation,pdf-ligatures"
     if endpoint == "/dev/captioned_speech":
         assert response.json()["timestamps"] == []
         assert len(base64.b64decode(response.json()["audio"])) == 48000
@@ -146,6 +146,32 @@ def test_real_engine_preflight_stops_before_inference_for_unsupported_input():
     with pytest.raises(UnsupportedSpeechCharacters) as error:
         engine.synthesize("e\x1bects", "st_f1", "en", 1)
     assert error.value.codepoints == ["U+001B"]
+
+
+@pytest.mark.parametrize("original,expected", [
+    ("e\x1bects, di\x1berences, o\x1bers", "effects, differences, offers"),
+    ("critical-di\x1berence, o\x1b-the-shelf, trade-o\x1bs", "critical-difference, off-the-shelf, trade-offs"),
+    ("\x1cnal, classi\x1ccation, work\x1dow, e\x1ecient, shu\x1fed", "final, classification, workflow, efficient, shuffled"),
+    ("E\x1bect and E\x1bECT", "Effect and EFFECT"),
+    ("Greek κ and Ελληνικά stay intact.", "Greek κ and Ελληνικά stay intact."),
+])
+def test_dictionary_checked_legacy_ligatures(original, expected):
+    assert repair_pdf_ligatures(original) == expected
+
+
+@pytest.mark.parametrize("text", ["\x1b", "red\x1bblue", "zz\x1byy", "\x1b[31mred", "α\x1bβ", "red\x1cblue"])
+def test_unknown_words_controls_and_escapes_are_not_guessed(text):
+    assert repair_pdf_ligatures(text) == text
+
+
+@pytest.mark.parametrize("endpoint", ["/v1/audio/speech", "/dev/captioned_speech"])
+def test_pdf_ff_error_is_repaired_before_synthesis(server, endpoint):
+    client, engine, requests = server
+    response = client.post(endpoint, json={"voice": "st_f1", "input": "The e\x1bects di\x1ber; κ = 1.", "response_format": "pcm"})
+    assert response.status_code == 200
+    assert engine.calls == [("The effects differ; κ = 1.", "st_f1", "na", 1.0)]
+    assert response.headers["x-speech-text-cleanup"] == "pdf-ligatures"
+    assert not requests
 
 
 def test_discovery_and_models(server):

@@ -65,7 +65,17 @@ to the network. Request bodies/audio are held in memory; access logging is off.
   Changed responses include `X-Speech-Text-Cleanup: pdf-hyphenation`; no word
   timestamps are invented. Marker-only input is rejected before synthesis.
   This is not a general broken-font repair: ambiguous control codes standing in
-  for PDF ligatures are not guessed or expanded.
+  for arbitrary glyphs are not blindly deleted or expanded.
+- Legacy TeX PDF ligature codes `U+001B`–`U+001F` are expanded to `ff`, `fi`,
+  `fl`, `ffi`, `ffl` only inside Latin-word tokens whose repaired spelling is
+  recognized by the pinned, locally installed CMU pronunciation dictionary.
+  Hyphenated compounds may also pass when each component is recognized. Case
+  and all original reader text are preserved; changes are reported as
+  `pdf-ligatures`. Unknown words, standalone controls, terminal escapes and
+  non-Latin text are not guessed. The dictionary is a conservative spelling
+  check, not proof that every possible font uses this encoding.
+  Install the updated `requirements.lock` when upgrading the adapter; no text
+  is sent to a dictionary service and there is no runtime dictionary download.
 - Supertonic receives spoken names for a small set of otherwise rejected math
   symbols (`′ ↑ ∆ ∈ ∗ ∥ ∪ ≤ ≥ ⋆`). English/mixed prose uses English names;
   Greek-only prose uses Greek names. Equations are not parsed or rearranged.
@@ -74,7 +84,8 @@ to the network. Request bodies/audio are held in memory; access logging is off.
 - Remaining unsupported characters return structured HTTP 422 details listing
   Unicode code points. Only these codes are logged, not document content.
   OpenReader Mac 1.5.2 displays the reason and selected engine/voice. Corrupt font
-  mappings require OCR (explicit **Select screen region**) or corrected text;
+  mappings not covered by the checked ligature repair require OCR (explicit
+  **Select screen region**) or corrected text;
   silently deleting letters or guessing their meaning would change the document.
 - Greek sent with a Kokoro voice is rejected, not transliterated or silently
   substituted. The Mac app selects the configured Greek voice explicitly.

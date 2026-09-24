@@ -1,5 +1,13 @@
 # Changelog
 
+## Server ligature hotfix — 24 September 2026
+
+- Repair legacy PDF `ff`/`fi`/`fl`/`ffi`/`ffl` codes inside dictionary-verified
+  Latin words before Supertonic synthesis, including the reported U+001B error.
+- Keep reader text and Kokoro forwarding unchanged. Unknown/control-only input
+  still gets an explicit error rather than an arbitrary character substitution.
+- Requires the updated server dependencies; works with Mac version 1.5.2.
+
 ## 1.5.2
 
 - Show bounded speech-validation details for HTTP 422, including the selected

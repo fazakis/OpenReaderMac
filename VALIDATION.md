@@ -1,5 +1,22 @@
 # Validation record
 
+## Server ligature hotfix — 24 September 2026
+
+- The updated client identified `U+001B` as the remaining rejection. In the
+  supplied PDF this encodes the `ff` ligature. All **61 occurrences** were checked
+  against the document's extracted word tokens; the repair restores their
+  verified `ff` spelling, including compounds and the affected proper name.
+- Added a pinned local CMU pronunciation dictionary as a spelling check for
+  legacy `ff`/`fi`/`fl`/`ffi`/`ffl` repairs. Whole candidate words must be recognized,
+  or each component of a hyphenated compound must be recognized. This is a
+  constrained heuristic for a known PDF encoding, not a universal font decoder.
+- **37 server tests** passed, including repaired raw/captioned API input, case
+  handling, unchanged Greek, unknown words, standalone controls and ANSI escapes.
+  Real staging audio checks passed for every distinct affected word, mixed
+  Greek/English and captioned ligatures; unknown words retain a precise error.
+- Reader text and Kokoro requests are unchanged. No Mac rebuild is needed;
+  version 1.5.2 works with the updated server and dependency lock.
+
 ## Version 1.5.2 — speech validation diagnostics and math symbols
 
 - A full PDFium character audit of the reported PDF found additional unsupported

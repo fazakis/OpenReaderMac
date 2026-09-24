@@ -2,6 +2,7 @@
 import asyncio
 import base64
 from contextlib import asynccontextmanager
+from functools import lru_cache
 import json
 import logging
 import math
@@ -25,6 +26,8 @@ HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length"
 # PDFium emits U+FFFE for some discretionary line-end hyphens. U+00AD is
 # the standard soft hyphen. Neither is spoken text; keep all other scalars.
 PDF_HYPHENATION_MARKERS = str.maketrans({"\ufffe": None, "\u00ad": None})
+PDF_LIGATURES = str.maketrans(dict(zip("\x1b\x1c\x1d\x1e\x1f", ["ff", "fi", "fl", "ffi", "ffl"])))
+BROKEN_LATIN_WORD = re.compile(r"(?<!\w)[A-Za-z\x1b-\x1f]+(?:[-'][A-Za-z\x1b-\x1f]+)*(?!\w)")
 MATH_NAMES = {
     "′": ("prime", "τόνος"), "↑": ("up arrow", "βέλος προς τα πάνω"),
     "∆": ("delta", "δέλτα"), "∈": ("is an element of", "ανήκει στο"),
@@ -35,9 +38,35 @@ MATH_NAMES = {
 logger = logging.getLogger("openreader.speech")
 
 
+@lru_cache(maxsize=1)
+def english_dictionary():
+    import cmudict
+    return frozenset(word.casefold() for word in cmudict.words())
+
+
+def repair_pdf_ligatures(text):
+    def repair(match):
+        word = match.group()
+        if not LATIN.search(word) or not any(char in word for char in "\x1b\x1c\x1d\x1e\x1f"):
+            return word
+        candidate = word.translate(PDF_LIGATURES)
+        key = candidate.casefold()
+        vocabulary = english_dictionary()
+        if key not in vocabulary and not all(part in vocabulary for part in key.split("-")):
+            return word
+        # These codes are legacy TeX ligatures only in a recognized Latin word.
+        # Unknown words, standalone controls and terminal escapes stay untouched.
+        return candidate.upper() if word.isupper() else candidate
+    return BROKEN_LATIN_WORD.sub(repair, text)
+
+
 def prepare_supertonic_text(text):
     cleaned = text.translate(PDF_HYPHENATION_MARKERS)
     changes = ["pdf-hyphenation"] if cleaned != text else []
+    repaired = repair_pdf_ligatures(cleaned)
+    if repaired != cleaned:
+        changes.append("pdf-ligatures")
+        cleaned = repaired
     # Speak literal operator names, without translating prose or interpreting
     # equations. English prose uses English names; Greek-only prose uses Greek.
     language = 1 if GREEK.search(cleaned) and not LATIN.search(cleaned) else 0
