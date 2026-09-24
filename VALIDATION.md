@@ -1,5 +1,22 @@
 # Validation record
 
+## Server PDF-marker hotfix — 24 September 2026
+
+- Reproduced Supertonic HTTP 422 using a PDFium-extracted passage with `U+FFFE`
+  inside a hyphenated word. Removing only that marker returned valid audio;
+  the Greek letters in the passage were supported and preserved.
+- **20 server tests** passed, including six new API regression cases for raw and
+  captioned synthesis, marker-only input, the original request-length bound,
+  preserved Greek/math/combining accents, and byte-for-byte Kokoro forwarding.
+- Staging and production checks passed for the original failing passage, combined
+  `U+FFFE`/`U+00AD` input, captioned Supertonic output without invented timings,
+  unmodified Greek/English, and Kokoro captioned audio with PDF markers. Returned
+  PCM was nonempty, even-length and nonzero; Kokoro retained real timestamps.
+- Only the server's Supertonic synthesis copy is cleaned. The app source/binary,
+  displayed text, voice settings and model files are unchanged. No new Mac build
+  is needed. Broken PDF font/ligature mappings remain a separate quality issue.
+- The manuscript and extracted passages used for diagnosis are not committed.
+
 ## Version 1.5.1 — Chrome accessibility initialization (24 September 2026)
 
 - Root-cause evidence came from the affected Mac's controlled diagnostic: Chrome

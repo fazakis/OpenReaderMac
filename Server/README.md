@@ -55,8 +55,17 @@ to the network. Request bodies/audio are held in memory; access logging is off.
 - `GET /v1/audio/voices` adds `st_f1`–`st_f5` and `st_m1`–`st_m5`.
 - `GET /v1/models` adds `supertonic-3`.
 - Select `model: "supertonic-3"` and a `st_` voice for Greek or mixed text.
-  Greek-only input uses `el`; mixed Greek/English input is split at script boundaries and synthesized with explicit `el`/`en` using the same voice. Every original character is preserved across those spans.
+  Greek-only input uses `el`; mixed Greek/English input is split at script boundaries and synthesized with explicit `el`/`en` using the same voice. The split preserves every character of the synthesis text across those spans.
   Other supported explicit language codes are passed to the SDK.
+- Before Supertonic synthesis, remove only PDFium's invisible discretionary-hyphen
+  marker `U+FFFE` and the standard soft hyphen `U+00AD` from a speech-only copy.
+  These otherwise cause Supertonic validation to reject an entire request.
+  Greek letters, mathematical symbols, accents, visible hyphens and the reader's
+  original text are not changed. Kokoro requests still pass through byte-for-byte.
+  Changed responses include `X-Speech-Text-Cleanup: pdf-hyphenation`; no word
+  timestamps are invented. Marker-only input is rejected before synthesis.
+  This is not a general broken-font repair: ambiguous control codes standing in
+  for PDF ligatures are not guessed or expanded.
 - Greek sent with a Kokoro voice is rejected, not transliterated or silently
   substituted. The Mac app selects the configured Greek voice explicitly.
 - Supertonic output is resampled to 24 kHz. PCM, WAV, MP3, FLAC, Opus and AAC are

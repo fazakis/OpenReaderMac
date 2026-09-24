@@ -1,5 +1,12 @@
 # Changelog
 
+## Server hotfix — 24 September 2026
+
+- Prevent Supertonic HTTP 422 failures from PDFium `U+FFFE` hyphenation markers
+  and `U+00AD` soft hyphens. Clean only the synthesis copy, preserving displayed
+  text, Greek letters and mathematical notation. Kokoro forwarding is unchanged.
+- Compatible with the existing Mac app; no new macOS binary is required.
+
 ## 1.5.1
 
 - Recover Chrome webpage and PDF selections when native accessibility has not

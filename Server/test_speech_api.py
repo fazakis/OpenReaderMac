@@ -70,6 +70,42 @@ def test_no_fabricated_word_timestamps(server):
     assert len(base64.b64decode(packet["audio"])) == 48000
 
 
+@pytest.mark.parametrize("endpoint", ["/v1/audio/speech", "/dev/captioned_speech"])
+def test_pdf_markers_are_removed_only_from_supertonic_synthesis_copy(server, endpoint):
+    client, engine, requests = server
+    original = "Two neigh\ufffebourhoods and soft\u00adhyphens. κ(x) = 1; γ = 0.15; cafe\u0301; the \x1cnal result."
+    expected = "Two neighbourhoods and softhyphens. κ(x) = 1; γ = 0.15; cafe\u0301; the \x1cnal result."
+    response = client.post(endpoint, json={"model": "supertonic-3", "voice": "st_f1",
+                                          "input": original, "response_format": "pcm"})
+    assert response.status_code == 200
+    assert engine.calls == [(expected, "st_f1", "na", 1.0)]
+    assert not requests  # Never fall back to Kokoro or another provider.
+    assert response.headers["x-speech-text-cleanup"] == "pdf-hyphenation"
+    if endpoint == "/dev/captioned_speech":
+        assert response.json()["timestamps"] == []
+        assert len(base64.b64decode(response.json()["audio"])) == 48000
+    else:
+        assert len(response.content) == 48000
+
+
+@pytest.mark.parametrize("text", ["\ufffe", " \u00ad\ufffe\n", "\ufffe" * 10001])
+def test_marker_only_or_original_oversize_input_does_not_synthesize(server, text):
+    client, engine, requests = server
+    response = client.post("/v1/audio/speech", json={"voice": "st_f1", "input": text})
+    assert response.status_code == 422
+    assert not engine.calls and not requests
+
+
+def test_kokoro_pdf_input_is_still_forwarded_byte_for_byte(server):
+    client, engine, requests = server
+    body = b'{"model":"kokoro", "voice":"af_alloy", "input":"neigh\\ufffebourhoods and soft\\u00adhyphens"}'
+    response = client.post("/dev/captioned_speech", content=body, headers={"content-type": "application/json"})
+    assert response.status_code == 200
+    assert requests[-1].content == body
+    assert "x-speech-text-cleanup" not in response.headers
+    assert not engine.calls
+
+
 def test_discovery_and_models(server):
     client, _, _ = server
     caps = client.get("/v1/capabilities").json()

@@ -21,6 +21,9 @@ LATIN = re.compile(r"[A-Za-z]")
 VOICES = [f"st_{gender}{i}" for gender in ("f", "m") for i in range(1, 6)]
 SAMPLE_RATE = 24000
 HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length"}
+# PDFium emits U+FFFE for some discretionary line-end hyphens. U+00AD is
+# the standard soft hyphen. Neither is spoken text; keep all other scalars.
+PDF_HYPHENATION_MARKERS = str.maketrans({"\ufffe": None, "\u00ad": None})
 
 
 def language_for(text, requested=None):
@@ -179,6 +182,11 @@ def create_app(engine=None, upstream=None, transport=None):
             raise HTTPException(422, "Select an available Supertonic voice")
         if not text.strip() or len(text) > 10000:
             raise HTTPException(422, "input must contain 1–10000 characters")
+        # Clean only the Supertonic synthesis copy, never the reader/source text
+        # or proxied Kokoro requests. Do not guess repairs for broken PDF fonts.
+        speech_text = text.translate(PDF_HYPHENATION_MARKERS)
+        if not speech_text.strip():
+            raise HTTPException(422, "input contains no speakable text after PDF marker cleanup")
         try:
             speed = float(payload.get("speed", 1))
             if not math.isfinite(speed) or not 0.5 <= speed <= 2:
@@ -199,12 +207,14 @@ def create_app(engine=None, upstream=None, transport=None):
             if await request.is_disconnected():
                 return Response(status_code=499)
             pcm = await anyio.to_thread.run_sync(request.app.state.engine.synthesize,
-                text, voice, language_for(text, payload.get("lang_code")), speed)
+                speech_text, voice, language_for(speech_text, payload.get("lang_code")), speed)
         except ValueError:
             raise HTTPException(422, "The model cannot synthesize this text or language") from None
         finally:
             request.app.state.queue.release()
         headers = {"X-Sample-Rate": str(SAMPLE_RATE), "X-Speech-Model": "supertonic-3", "X-Speech-Voice": voice}
+        if speech_text != text:
+            headers["X-Speech-Text-Cleanup"] = "pdf-hyphenation"
         if captioned:
             packet = {"audio": base64.b64encode(pcm).decode(), "audio_format": "audio/pcm", "timestamps": []}
             return Response(json.dumps(packet) + "\n", media_type="application/json", headers=headers)
